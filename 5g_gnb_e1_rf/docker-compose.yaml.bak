@@ -1,0 +1,110 @@
+services:
+    oai-cucp:
+        image: oaisoftwarealliance/oai-gnb:develop
+        container_name: rfsim5g-oai-cucp
+        cap_drop:
+            - ALL
+        environment:
+            USE_ADDITIONAL_OPTIONS: --sa --log_config.global_log_options level,nocolor,time
+                                    --gNBs.[0].E1_INTERFACE.[0].ipv4_cucp 172.22.0.23
+                                    --gNBs.[0].local_s_address 172.22.0.23
+            ASAN_OPTIONS: detect_leaks=0
+#        depends_on:
+#            - oai-upf
+        networks:
+            default:
+                ipv4_address: 172.22.0.23
+        volumes:
+            - ../conf_files/gnb-cucp.sa.f1.conf:/opt/oai-gnb/etc/gnb.conf
+        healthcheck:
+            test: /bin/bash -c "pgrep nr-softmodem"
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    oai-cuup:
+        image: oaisoftwarealliance/oai-nr-cuup:develop
+        container_name: rfsim5g-oai-cuup
+        cap_drop:
+            - ALL
+        environment:
+            USE_ADDITIONAL_OPTIONS: --sa --log_config.global_log_options level,nocolor,time
+                                    --gNBs.[0].E1_INTERFACE.[0].ipv4_cucp 172.22.0.23
+                                    --gNBs.[0].E1_INTERFACE.[0].ipv4_cuup 172.22.0.26
+                                    --gNBs.[0].local_s_address 172.22.0.26
+                                    --gNBs.[0].remote_s_address 127.0.0.1
+            ASAN_OPTIONS: detect_leaks=0
+        depends_on:
+            - oai-cucp
+        networks:
+            default:
+                ipv4_address: 172.22.0.26
+        volumes:
+            - ../conf_files/gnb-cuup.sa.f1.conf:/opt/oai-gnb/etc/gnb.conf
+        healthcheck:
+            test: /bin/bash -c "pgrep nr-cuup"
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    oai-du:
+        image: oaisoftwarealliance/oai-gnb:develop
+        container_name: rfsim5g-oai-du
+        cap_drop:
+            - ALL
+        environment:
+            USE_ADDITIONAL_OPTIONS: --sa --rfsim --log_config.global_log_options level,nocolor,time
+                                    --MACRLCs.[0].local_n_address 172.22.0.24
+                                    --MACRLCs.[0].remote_n_address oai-cucp
+                                    --MACRLCs.[0].local_n_address_f1u 172.22.0.24
+            ASAN_OPTIONS: detect_leaks=0
+        depends_on:
+            - oai-cucp
+            - oai-cuup
+        networks:
+            default:
+                ipv4_address: 172.22.0.24
+        volumes:
+            - ../conf_files/gnb-du.sa.band78.106prb.rfsim.conf:/opt/oai-gnb/etc/gnb.conf
+        healthcheck:
+            test: /bin/bash -c "pgrep nr-softmodem"
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    oai-nr-ue:
+        image: oaisoftwarealliance/oai-nr-ue:develop
+        container_name: rfsim5g-oai-nr-ue
+        cap_drop:
+            - ALL
+        cap_add:
+            - NET_ADMIN  # for interface bringup
+            - NET_RAW    # for ping
+        environment:
+            USE_ADDITIONAL_OPTIONS: --sa --rfsim --log_config.global_log_options level,nocolor,time
+                                    -r 106 --numerology 1 -C 3619200000
+                                    --uicc0.imsi 208990100001100
+                                    --rfsimulator.serveraddr 172.22.0.24        
+                                    --rfsimulator.options chanmod
+                                    --telnetsrv --telnetsrv.shrmod ciUE --telnetsrv.listenaddr 172.22.0.25 --telnetsrv.listenport 8091
+            ASAN_OPTIONS: detect_odr_violation=0
+        depends_on:
+            - oai-du
+        networks:
+            default:
+                ipv4_address: 172.22.0.25
+        devices:
+             - /dev/net/tun:/dev/net/tun
+        volumes:
+            - ../conf_files/nrue.uicc.conf:/opt/oai-nr-ue/etc/nr-ue.conf
+            - ../conf_files/rfsim_channel_ci.conf:/opt/oai-nr-ue/etc/rfsim_channel_ci.conf
+        healthcheck:
+            test: /bin/bash -c "pgrep nr-uesoftmodem"
+            interval: 10s
+            timeout: 5s
+            retries: 5
+networks:
+    default:
+        external:
+            name: docker_open5gs_default
+
